@@ -68,11 +68,11 @@ export const generateTitle = async (prompt: string, response: string, isMock: bo
       contents: [
         { 
           role: 'user', 
-          parts: [{ text: `Task: Create a chat segment title based on the following user prompt and AI response. Describe it as best as you can in 5-6 words 
+          parts: [{ text: ` 
           Rules: 
-          1. Do NOT repeat the user's prompt. 
-          2. Do NOT use the word 'Chat' or 'Discussion'. 
-          3. Be abstract and elegant.
+           
+           
+         
           
           User: "${prompt}"
           AI: "${response.substring(0, 100)}..."

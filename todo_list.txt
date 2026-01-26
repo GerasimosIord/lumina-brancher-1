@@ -1,0 +1,15 @@
+DONE: fix reply appearance
+DONE: add logout button
+DONE: add delete conversation button
+DONE: current branch showing big number   
+DONE: ui style is cramped
+
+new branch doesnt get generated instantly
+send message bug: message dissapears and then appears
+
+add options for gpt/gemini/claude color themes
+add account vieweing
+replies are slow
+all lines must be straight in react flow
+reading/uploading files
+titles suck

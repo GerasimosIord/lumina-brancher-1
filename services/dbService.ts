@@ -74,7 +74,7 @@ export const dbService = {
     conv: { id: data.conversation_id, title, user_id: user.id },
     rootNode: { id: data.node_id, hierarchical_id: '1' }
   };
-},
+  },
 
   async createConversation(title: string) {
     const { data: { user } } = await supabase.auth.getUser();
@@ -87,6 +87,15 @@ export const dbService = {
       .single();
     if (error) throw error;
     return data;
+  },
+
+  async deleteConversation(conversationId: string): Promise<void> {
+    const { error } = await supabase
+      .from('conversations')
+      .delete()
+      .eq('id', conversationId);
+    
+    if (error) throw error;
   },
 
   async updateConversationState(id: string, updates: { root_node_id?: string, current_node_id?: string, title?: string }) {
