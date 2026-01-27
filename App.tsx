@@ -155,169 +155,249 @@ const App: React.FC = () => {
   };
 
   const handleSendMessage = async (text: string) => {
-    if (isGenerating || !text.trim()) return;
+  if (isGenerating || !text.trim()) return;
 
-    setIsGenerating(true);
-    let currentConvId = activeConvId;
-    let targetNodeId: string;
+  console.log('🚀 [START] Message send initiated');
+  const perfStart = performance.now();
+
+  setIsGenerating(true);
+  let currentConvId = activeConvId;
+  
+  const isNewConversation = !currentConvId;
+  const isBranching = !!workspace.branchingFromId;
+  const timestamp = Date.now();
+
+  const currentMessages = (workspace.currentNodeId && workspace.nodes[workspace.currentNodeId]) 
+    ? workspace.nodes[workspace.currentNodeId].messages 
+    : [];
     
-    const isNewConversation = !currentConvId;
-    const isBranching = !!workspace.branchingFromId;
+  const userMsg: Message = { 
+    role: 'user', 
+    content: text, 
+    timestamp: timestamp, 
+    ordinal: isNewConversation || isBranching ? 0 : currentMessages.length 
+  };
 
-    try {
-      // --- STEP 1: CONVERSATION LAYER ---
-      if (isNewConversation) {
-        const newConv = await dbService.createConversation("New Discussion");
-        currentConvId = newConv.id;
-        setActiveConvId(currentConvId);
-      }
+  // OPTIMISTIC UPDATE
+  const tempNodeId = `temp_${timestamp}`; 
+  let optimisticNodeId = workspace.currentNodeId;
 
-      // --- STEP 2: NODE LAYER ---
-      if (isNewConversation || isBranching) {
-      const parentId = isBranching ? workspace.branchingFromId : (isNewConversation ? null : workspace.currentNodeId);
+  if (isNewConversation || isBranching) {
+    const parentId = isBranching ? workspace.branchingFromId : null;
+    const hLabel = generateHierarchicalLabel(parentId, workspace.nodes);
+    
+    optimisticNodeId = tempNodeId;
+
+    setWorkspace(prev => ({
+      ...prev,
+      nodes: {
+        ...prev.nodes,
+        [tempNodeId]: {
+          id: tempNodeId,
+          hierarchicalID: hLabel,
+          parentId: parentId,
+          messages: [{ ...userMsg }],
+          title: '...',
+          timestamp: timestamp,
+          childrenIds: [],
+          isBranch: isBranching
+        }
+      },
+      currentNodeId: tempNodeId,
+      branchingFromId: null 
+    }));
+  } else {
+    if (workspace.currentNodeId) {
+      setWorkspace(prev => {
+        const node = prev.nodes[prev.currentNodeId!];
+        if (!node) return prev;
+
+        return {
+          ...prev,
+          nodes: { 
+            ...prev.nodes, 
+            [prev.currentNodeId!]: {
+              ...node,
+              messages: [...node.messages, userMsg]
+            }
+          }
+        };
+      });
+    }
+  }
+
+  try {
+    // GENERATE AI RESPONSE FIRST (while user message is showing)
+    const t6 = performance.now();
+    const historyPath = getFullHistoryPath(optimisticNodeId); 
+    const aiContext = historyPath.flatMap(n => n.messages).map(m => ({
+      role: m.role,
+      parts: [{ text: m.content }]
+    }));
+
+    console.log(`🤖 [AI] Calling generateResponse`);
+    const responseText = await generateResponse(text, aiContext);
+    console.log(`🤖 [AI] Response received (${(performance.now() - t6).toFixed(0)}ms)`);
+    
+    const aiMsg: Message = { 
+      role: 'model', 
+      content: responseText, 
+      timestamp: Date.now(), 
+      ordinal: userMsg.ordinal + 1 
+    };
+
+    // SHOW AI RESPONSE IMMEDIATELY (before DB saves!)
+    setWorkspace(prev => {
+      const node = prev.nodes[optimisticNodeId];
+      if (!node) return prev;
+
+      return {
+        ...prev,
+        nodes: {
+          ...prev.nodes,
+          [optimisticNodeId]: {
+            ...node,
+            messages: [...node.messages, aiMsg]
+          }
+        }
+      };
+    });
+
+    setIsGenerating(false); // User can see response now!
+    console.log(`✅ [USER SEES RESPONSE] Time: ${(performance.now() - perfStart).toFixed(0)}ms`);
+
+    // NOW do database operations in background (user already sees the response!)
+    const tDB = performance.now();
+    
+    if (isNewConversation) {
+      const newConv = await dbService.createConversation("New Discussion");
+      currentConvId = newConv.id;
+      setActiveConvId(currentConvId);
+    }
+
+    let targetNodeId: string;
+
+    if (isNewConversation || isBranching) {
+      const parentId = isBranching ? workspace.branchingFromId : null;
       const hLabel = generateHierarchicalLabel(parentId, workspace.nodes);
 
-      // A. Create the Node in the DB
-      const newNodePromise = dbService.createNode({
+      const newNode = await dbService.createNode({
         conversations_id: currentConvId!,
         parent_id: parentId,
         hierarchical_id: hLabel,
         is_branch: isBranching,
         title: '...'
       });
-
-      // B. OPTIMISTIC UPDATE: Add the node to the UI immediately
-      // We use a temporary ID or a predicted one so the Map shows it NOW
-      const tempNodeId = `temp_${Date.now()}`; 
-      
-      setWorkspace(prev => ({
-        ...prev,
-        nodes: {
-          ...prev.nodes,
-          [tempNodeId]: {
-            id: tempNodeId,
-            hierarchicalID: hLabel,
-            parentId: parentId,
-            messages: [{ role: 'user', content: text, timestamp: Date.now(), ordinal: 0 }],
-            title: '...',
-            timestamp: Date.now(),
-            childrenIds: [],
-            isBranch: isBranching
-          }
-        },
-        currentNodeId: tempNodeId,
-        branchingFromId: null // Clear the branching state so the UI resets
-      }));
-
-      const newNode = await newNodePromise;
       targetNodeId = newNode.id;
-      // After the await, the "Final Step" at the end of the function 
-      // will replace the temp node with the real DB node.
     } else {
       targetNodeId = workspace.currentNodeId!;
     }
 
-      // --- STEP 3: USER MESSAGE ---
-      const currentMessages = workspace.nodes[targetNodeId]?.messages || [];
-      const userMsg: Message = { 
-        role: 'user', 
-        content: text, 
-        timestamp: Date.now(), 
-        ordinal: currentMessages.length 
+    await dbService.createMessage({
+      nodes_id: targetNodeId,
+      role: 'user',
+      content: text,
+      ordinal: userMsg.ordinal
+    });
+
+    await dbService.createMessage({
+      nodes_id: targetNodeId,
+      role: 'model',
+      content: responseText,
+      ordinal: aiMsg.ordinal
+    });
+
+    if (isNewConversation) {
+      await dbService.updateConversationState(currentConvId!, {
+        root_node_id: targetNodeId,
+        current_node_id: targetNodeId
+      });
+    } else if (isBranching) {
+      await dbService.updateConversationState(currentConvId!, {
+        current_node_id: targetNodeId
+      });
+    }
+
+    console.log(`📦 [DB] All operations complete (${(performance.now() - tDB).toFixed(0)}ms)`);
+
+    // Replace temp node with real node
+    setWorkspace(prev => {
+      const tempNode = prev.nodes[tempNodeId];
+      if (!tempNode) return prev;
+
+      const { [tempNodeId]: removed, ...remainingNodes } = prev.nodes;
+
+      return {
+        ...prev,
+        nodes: {
+          ...remainingNodes,
+          [targetNodeId]: {
+            ...tempNode,
+            id: targetNodeId
+          }
+        },
+        currentNodeId: targetNodeId,
+        rootNodeId: prev.rootNodeId || (isNewConversation ? targetNodeId : prev.rootNodeId)
       };
+    });
 
-      await dbService.createMessage({
-        nodes_id: targetNodeId,
-        role: 'user',
-        content: text,
-        ordinal: userMsg.ordinal
-      });
-
-      // --- STEP 3.5: OPTIMISTIC UI UPDATE (See message immediately) ---
-      setWorkspace(prev => {
-        const updatedNode = {
-          ...(prev.nodes[targetNodeId] || {
-            id: targetNodeId,
-            hierarchicalID: generateHierarchicalLabel(isBranching ? workspace.branchingFromId : null, prev.nodes),
-            parentId: isBranching ? workspace.branchingFromId : (isNewConversation ? null : prev.currentNodeId),
-            title: '...',
-            timestamp: Date.now(),
-            childrenIds: [],
-            isBranch: isBranching,
-          }),
-          messages: [...(prev.nodes[targetNodeId]?.messages || []), userMsg]
-        };
-
-        return {
-          ...prev,
-          nodes: { ...prev.nodes, [targetNodeId]: updatedNode },
-          currentNodeId: targetNodeId,
-          rootNodeId: prev.rootNodeId || targetNodeId,
-          branchingFromId: null
-        };
-      });
-
-      // --- STEP 4: DB STATE SYNC (Pointers) ---
-      if (isNewConversation) {
-        await dbService.updateConversationState(currentConvId!, {
-          root_node_id: targetNodeId,
-          current_node_id: targetNodeId
-        });
-      } else if (isBranching) {
-        await dbService.updateConversationState(currentConvId!, {
-          current_node_id: targetNodeId
-        });
-      }
-
-      // --- STEP 5: AI GENERATION ---
-      const historyPath = getFullHistoryPath(targetNodeId);
-      const aiContext = historyPath.flatMap(n => n.messages).map(m => ({
-        role: m.role,
-        parts: [{ text: m.content }]
-      }));
-
-      const responseText = await generateResponse(text, aiContext);
-      
-      const aiMsg: Message = { 
-        role: 'model', 
-        content: responseText, 
-        timestamp: Date.now(), 
-        ordinal: userMsg.ordinal + 1 
-      };
-
-      await dbService.createMessage({
-        nodes_id: targetNodeId,
-        role: 'model',
-        content: responseText,
-        ordinal: aiMsg.ordinal
-      });
-
-      // --- STEP 6: TITLE & METADATA ---
-      if (isNewConversation || isBranching) {
-        const llmTitle = await generateTitle(text, responseText);
-        await dbService.updateNodeTitle(targetNodeId, llmTitle);
-        if (isNewConversation) {
-          await dbService.updateConversationState(currentConvId!, { title: llmTitle });
-        }
-      }
-
-      // --- FINAL STEP: REFRESH ALL ---
+    // Update sidebar
+    if (isNewConversation) {
       const sidebarData = await dbService.fetchConversations();
       setConversations(sidebarData);
-      
-      const finalNodes = await dbService.fetchConversationDetail(currentConvId!);
-      setWorkspace(prev => ({
-        ...prev,
-        nodes: finalNodes,
-      }));
-
-    } catch (err) {
-      console.error("Critical Message Failure:", err);
-      alert("Database connection lost.");
-    } finally {
-      setIsGenerating(false);
     }
-  };
+
+    // Title generation (background)
+    if (isNewConversation || isBranching) {
+      generateTitle(text, responseText).then(async (llmTitle) => {
+        try {
+          await dbService.updateNodeTitle(targetNodeId, llmTitle);
+          if (isNewConversation) {
+            await dbService.updateConversationState(currentConvId!, { title: llmTitle });
+          }
+          const updatedSidebar = await dbService.fetchConversations();
+          setConversations(updatedSidebar);
+        } catch (err) {
+          console.error("Title update failed:", err);
+        }
+      });
+    }
+
+    console.log(`✅ [COMPLETE] Total time: ${(performance.now() - perfStart).toFixed(0)}ms`);
+
+  } catch (err) {
+    console.error("Critical Message Failure:", err);
+    setIsGenerating(false);
+    alert("Something went wrong");
+    
+    // Rollback
+    setWorkspace(prev => {
+      if (!isNewConversation && !isBranching && prev.currentNodeId) {
+        const node = prev.nodes[prev.currentNodeId];
+        if(!node) return prev;
+        const rolledBackMessages = node.messages.filter(m => m.timestamp !== timestamp);
+        return {
+          ...prev,
+          nodes: {
+            ...prev.nodes,
+            [prev.currentNodeId]: { ...node, messages: rolledBackMessages }
+          }
+        };
+      }
+      
+      if (isNewConversation || isBranching) {
+        const { [tempNodeId]: removed, ...remainingNodes } = prev.nodes;
+        return {
+          ...prev,
+          nodes: remainingNodes,
+          currentNodeId: prev.currentNodeId === tempNodeId ? null : prev.currentNodeId
+        };
+      }
+      return prev;
+    });
+  }
+};
+
 
   const handleClearAll = () => {
     if (confirm("Purge all topological data from local storage?")) {

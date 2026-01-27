@@ -61,35 +61,38 @@ export const generateResponse = async (
  */
 export const generateTitle = async (prompt: string, response: string, isMock: boolean = false) => {
   if (isMock) return MOCK_TITLES[Math.floor(Math.random() * MOCK_TITLES.length)];
-
+  
   try {
     const result = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: [
         { 
           role: 'user', 
-          parts: [{ text: ` 
-          Rules: 
-           
-           
-         
-          
-          User: "${prompt}"
-          AI: "${response.substring(0, 100)}..."
-          Name:` }] 
+          parts: [{ 
+            text: `Generate a short, descriptive title (2-6 words) for this conversation. Do not use quotes or special characters.
+
+User: "${prompt}"
+AI: "${response.substring(0, 150)}..."
+
+Title:` 
+          }] 
         }
       ],
       config: { temperature: 0.7 }
     });
+
+    let title = result.text?.replace(/["'#*\n]/g, '').trim() || "";
     
-    let title = result.text?.replace(/["'#*]/g, '').trim() || "";
-    // If the model still echoed the prompt or failed, use a mock title instead of prompt substring
-    if (title.length > 25 || title.toLowerCase().includes(prompt.toLowerCase().substring(0, 5))) {
+    // Basic validation: reject if empty, too long, or is just the prompt repeated
+    if (!title || 
+        title.length > 60 || 
+        title.length < 3 ||
+        title.toLowerCase() === prompt.toLowerCase().substring(0, title.length)) {
       return MOCK_TITLES[Math.floor(Math.random() * MOCK_TITLES.length)];
     }
+    
     return title;
   } catch (err) {
-    // Better fallback than just prompt.substring
     return MOCK_TITLES[Math.floor(Math.random() * MOCK_TITLES.length)];
   }
 };

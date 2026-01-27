@@ -142,7 +142,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
             </div>
           )}
 
-          <div className={`flex items-center gap-3 bg-zinc-800/40 border rounded-2xl p-2 transition-all shadow-inner ${isBranching ? 'border-blue-500/50 rounded-t-none ring-2 ring-blue-500/10' : 'border-zinc-700/50 focus-within:border-zinc-500 focus-within:bg-zinc-800/60'}`}>
+          <div className={`flex items-center gap-3 bg-zinc-800/40 border rounded-2xl p-0.7 transition-all shadow-inner ${isBranching ? 'border-blue-500/50 rounded-t-none ring-2 ring-blue-500/10' : 'border-zinc-700/50 focus-within:border-zinc-500 focus-within:bg-zinc-800/60'}`}>
             <form onSubmit={handleSubmit} className="flex-1 flex gap-3">
               <input
                 type="text"

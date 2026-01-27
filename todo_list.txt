@@ -3,13 +3,16 @@ DONE: add logout button
 DONE: add delete conversation button
 DONE: current branch showing big number   
 DONE: ui style is cramped
+DONE: send message bug: message dissapears and then appears
+DONE: titles suck
+DONE: replies are slow
 
 new branch doesnt get generated instantly
-send message bug: message dissapears and then appears
 
 add options for gpt/gemini/claude color themes
 add account vieweing
-replies are slow
+replies coming bit by bit for better speed and ux
 all lines must be straight in react flow
 reading/uploading files
-titles suck
+
+text input must grow vertically
