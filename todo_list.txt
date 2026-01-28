@@ -6,13 +6,18 @@ DONE: ui style is cramped
 DONE: send message bug: message dissapears and then appears
 DONE: titles suck
 DONE: replies are slow
+DONE: text input must grow vertically
+DONE: new branch doesnt get generated instantly
+DONE: reading/uploading files
 
-new branch doesnt get generated instantly
-
+store files correctly
 add options for gpt/gemini/claude color themes
 add account vieweing
 replies coming bit by bit for better speed and ux
 all lines must be straight in react flow
-reading/uploading files
+name
+temp memory for when refreshing
+user messages must not be tall
+replace typing dots with spinning circle
 
-text input must grow vertically
+/// - REMOVE CONSOLE OUTPUTS BEFORE DEPLOYMENT

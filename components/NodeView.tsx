@@ -155,7 +155,7 @@ export const NodeView: React.FC<NodeViewProps> = (props) => {
           edges={flowEdges}
           nodeTypes={nodeTypes}
           onNodeClick={(_, node) => onSelectNode(node.id)}
-          minZoom={0.05}
+          minZoom={0.5}
           maxZoom={2}
           zoomOnScroll={viewMode === 'node'}
           panOnDrag={viewMode === 'node'}

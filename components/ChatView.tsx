@@ -1,5 +1,5 @@
 
-import React, { useRef, useEffect, useMemo } from 'react';
+import React, { useRef, useEffect, useMemo, useState } from 'react';
 import { ChatNode, Message } from '../types';
 import ReactMarkdown from 'react-markdown';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -8,7 +8,7 @@ import { vs } from 'react-syntax-highlighter/dist/esm/styles/hljs';
 
 interface ChatViewProps {
   history: ChatNode[]; 
-  onSendMessage: (text: string) => void;
+  onSendMessage: (text: string, files: File[]) => void;
   onBranch: (nodeId: string) => void;
   isGenerating: boolean;
   isBranching?: boolean;
@@ -28,7 +28,9 @@ export const ChatView: React.FC<ChatViewProps> = ({
   currentTitle,
 }) => {
   const [input, setInput] = React.useState('');
+  const [files, setFiles] = useState<File[]>([]); // New state for files
   const scrollRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null); // New ref for file input
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -36,11 +38,34 @@ export const ChatView: React.FC<ChatViewProps> = ({
     }
   }, [history, isGenerating]);
 
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      setFiles((prev) => [...prev, ...Array.from(e.target.files || [])]);
+    }
+    // Reset input so the same file can be selected again if needed
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  // ADD THIS FUNCTION:
+  const removeFile = (index: number) => {
+    setFiles((prev) => prev.filter((_, i) => i !== index));
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim() || isGenerating) return;
-    onSendMessage(input);
+
+    if (!input.trim() && files.length === 0 || isGenerating) return;
+    onSendMessage(input, files);
     setInput('');
+    setFiles([]);
+
+    setTimeout(() => {
+    const textarea = document.querySelector('textarea');
+    if (textarea) {
+      textarea.style.height = 'auto';
+    }
+  }, 0);
   };
 
   const currentHierarchicalId = useMemo(() => {
@@ -142,14 +167,68 @@ export const ChatView: React.FC<ChatViewProps> = ({
             </div>
           )}
 
-          <div className={`flex items-center gap-3 bg-zinc-800/40 border rounded-2xl p-0.7 transition-all shadow-inner ${isBranching ? 'border-blue-500/50 rounded-t-none ring-2 ring-blue-500/10' : 'border-zinc-700/50 focus-within:border-zinc-500 focus-within:bg-zinc-800/60'}`}>
-            <form onSubmit={handleSubmit} className="flex-1 flex gap-3">
-              <input
-                type="text"
+          <div className={`flex items-end gap-3 bg-zinc-800/40 border rounded-2xl p-0.7 transition-all shadow-inner ${isBranching ? 'border-blue-500/50 rounded-t-none ring-2 ring-blue-500/10' : 'border-zinc-700/50 focus-within:border-zinc-500 focus-within:bg-zinc-800/60'}`}>
+           
+           {files.length > 0 && (
+            <div className="flex gap-2 px-2 pt-2 overflow-x-auto custom-scrollbar">
+              {files.map((file, i) => (
+                <div key={i} className="flex items-center gap-2 bg-zinc-800 rounded-lg px-3 py-2 text-xs text-zinc-300 border border-zinc-700 shrink-0">
+                  <span className="truncate max-w-[150px]">{file.name}</span>
+                  <button 
+                    type="button"
+                    onClick={() => removeFile(i)}
+                    className="hover:text-red-400 transition-colors"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+           
+           <form onSubmit={handleSubmit} className="flex-1 flex items-end gap-3">
+              
+              <input 
+                type="file" 
+                multiple 
+                ref={fileInputRef}
+                className="hidden"
+                onChange={handleFileSelect}
+              />
+
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isGenerating}
+                className="p-4 text-zinc-400 hover:text-blue-400 hover:bg-zinc-800/50 rounded-xl transition-all disabled:opacity-50"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+                </svg>
+              </button>
+              
+              <textarea
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSubmit(e);
+                  }
+                }}
                 placeholder={isBranching ? "What happens in this new timeline?" : "Continue the conversation..."}
-                className="flex-1 bg-transparent border-none px-5 py-4 text-base font-medium focus:outline-none placeholder:text-zinc-600 text-white"
+                className="flex-1 bg-transparent border-none px-5 py-4 text-base font-medium focus:outline-none placeholder:text-zinc-600 text-white resize-none overflow-y-auto custom-scrollbar"
+                style={{
+                  minHeight: '56px',
+                  maxHeight: 'calc(1.5em * 7 + 2rem)',
+                  height: 'auto'
+                }}
+                rows={1}
+                onInput={(e) => {
+                  const target = e.target as HTMLTextAreaElement;
+                  target.style.height = 'auto';
+                  target.style.height = Math.min(target.scrollHeight, parseFloat(getComputedStyle(target).maxHeight)) + 'px';
+                }}
               />
               <button type="submit" disabled={!input.trim() || isGenerating} className={`px-8 py-4 rounded-xl transition-all font-black text-xs uppercase tracking-widest shadow-lg ${!input.trim() || isGenerating ? 'bg-zinc-700 text-zinc-500 opacity-50' : (isBranching ? 'bg-blue-600 hover:bg-blue-500 text-white' : 'bg-[#0084ff] hover:bg-[#0073e6] text-white')} hover:scale-[1.02] active:scale-[0.98]`}>
                 {isGenerating ? 'Thinking' : (isBranching ? 'Branch' : 'Send')}

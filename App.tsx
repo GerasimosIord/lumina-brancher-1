@@ -41,6 +41,17 @@ const App: React.FC = () => {
 
   const [isGenerating, setIsGenerating] = useState(false);
 
+  // Add this near the top of your App component, after the useState declarations:
+
+useEffect(() => {
+  console.log('🔍 [WORKSPACE UPDATE]');
+  console.log('  - Total nodes:', Object.keys(workspace.nodes).length);
+  console.log('  - Node IDs:', Object.keys(workspace.nodes));
+  console.log('  - Current node:', workspace.currentNodeId);
+  console.log('  - Root node:', workspace.rootNodeId);
+  console.log('  - Branching from:', workspace.branchingFromId);
+}, [workspace.nodes, workspace.currentNodeId, workspace.rootNodeId, workspace.branchingFromId]);
+
   useEffect(() => {
     const loadSidebar = async () => {
       try {
@@ -121,6 +132,13 @@ const App: React.FC = () => {
   };
 
   const handleSelectConversation = async (id: string | null) => {
+    console.log('🔍 handleSelectConversation called! id:', id, 'activeConvId:', activeConvId);
+    
+    // Don't reload if we're already on this conversation
+    if (id === activeConvId) {
+      console.log('⏭️ Skipping - already active');
+      return;
+    }
     setActiveConvId(id);
     setIsSwitching(true);
     // If id is null, we are starting a NEW thread. Reset workspace.
@@ -154,12 +172,15 @@ const App: React.FC = () => {
     }
   };
 
-  const handleSendMessage = async (text: string) => {
-  if (isGenerating || !text.trim()) return;
+  const handleSendMessage = async (text: string, files: File[]) => {
+  if (isGenerating || (!text.trim() && files.length === 0)) return;
 
   console.log('🚀 [START] Message send initiated');
   const perfStart = performance.now();
 
+  console.log("Files to upload:", files);
+  console.log("Text to send:", text);
+  
   setIsGenerating(true);
   let currentConvId = activeConvId;
   
@@ -183,31 +204,47 @@ const App: React.FC = () => {
   let optimisticNodeId = workspace.currentNodeId;
 
   if (isNewConversation || isBranching) {
-    const parentId = isBranching ? workspace.branchingFromId : null;
-    const hLabel = generateHierarchicalLabel(parentId, workspace.nodes);
-    
-    optimisticNodeId = tempNodeId;
+  const parentId = isBranching ? workspace.branchingFromId : null;
+  const hLabel = generateHierarchicalLabel(parentId, workspace.nodes);
+  
+  optimisticNodeId = tempNodeId;
+console.log('🟢 [OPTIMISTIC] Creating new node with temp ID:', tempNodeId);
 
-    setWorkspace(prev => ({
+  setWorkspace(prev => {
+    const newNodes = {
+      ...prev.nodes,
+      [tempNodeId]: {
+        id: tempNodeId,
+        hierarchicalID: hLabel,
+        parentId: parentId,
+        messages: [{ ...userMsg }],
+        title: '...',
+        timestamp: timestamp,
+        childrenIds: [],
+        isBranch: isBranching
+      }
+    };
+
+    // Update parent's childrenIds if branching
+    if (parentId && prev.nodes[parentId]) {
+      newNodes[parentId] = {
+        ...prev.nodes[parentId],
+        childrenIds: [...prev.nodes[parentId].childrenIds, tempNodeId]
+      };
+    }
+
+    return {
       ...prev,
-      nodes: {
-        ...prev.nodes,
-        [tempNodeId]: {
-          id: tempNodeId,
-          hierarchicalID: hLabel,
-          parentId: parentId,
-          messages: [{ ...userMsg }],
-          title: '...',
-          timestamp: timestamp,
-          childrenIds: [],
-          isBranch: isBranching
-        }
-      },
+      nodes: newNodes,
       currentNodeId: tempNodeId,
-      branchingFromId: null 
-    }));
+      rootNodeId: !parentId ? tempNodeId : prev.rootNodeId,
+      branchingFromId: null
+    };
+  });
   } else {
     if (workspace.currentNodeId) {
+      console.log('🟢 [OPTIMISTIC] Adding user message to existing node');
+
       setWorkspace(prev => {
         const node = prev.nodes[prev.currentNodeId!];
         if (!node) return prev;
@@ -236,7 +273,8 @@ const App: React.FC = () => {
     }));
 
     console.log(`🤖 [AI] Calling generateResponse`);
-    const responseText = await generateResponse(text, aiContext);
+    const responseText = await generateResponse(text, aiContext, files);
+
     console.log(`🤖 [AI] Response received (${(performance.now() - t6).toFixed(0)}ms)`);
     
     const aiMsg: Message = { 
@@ -247,6 +285,8 @@ const App: React.FC = () => {
     };
 
     // SHOW AI RESPONSE IMMEDIATELY (before DB saves!)
+    console.log('🟢 [AI RESPONSE] Adding AI message to node:', optimisticNodeId);
+
     setWorkspace(prev => {
       const node = prev.nodes[optimisticNodeId];
       if (!node) return prev;
@@ -319,33 +359,26 @@ const App: React.FC = () => {
     }
 
     console.log(`📦 [DB] All operations complete (${(performance.now() - tDB).toFixed(0)}ms)`);
+console.log('🔄 About to re-hydrate from database. targetNodeId:', targetNodeId);
 
-    // Replace temp node with real node
+    // RE-HYDRATE FROM DATABASE to ensure perfect sync
+    const freshNodes = await dbService.fetchConversationDetail(currentConvId!);
+console.log('🟢 [DB COMPLETE] Replacing temp node:', tempNodeId, '→', targetNodeId);
+    
     setWorkspace(prev => {
-      const tempNode = prev.nodes[tempNodeId];
-      if (!tempNode) return prev;
-
-      const { [tempNodeId]: removed, ...remainingNodes } = prev.nodes;
-
-      return {
-        ...prev,
-        nodes: {
-          ...remainingNodes,
-          [targetNodeId]: {
-            ...tempNode,
-            id: targetNodeId
-          }
-        },
-        currentNodeId: targetNodeId,
-        rootNodeId: prev.rootNodeId || (isNewConversation ? targetNodeId : prev.rootNodeId)
-      };
-    });
+  return {
+    ...prev,
+    nodes: freshNodes,
+    currentNodeId: targetNodeId,
+    rootNodeId: isNewConversation ? targetNodeId : prev.rootNodeId, // FIX: Always update rootNodeId for new conversations
+    branchingFromId: null
+  };
+});
 
     // Update sidebar
-    if (isNewConversation) {
-      const sidebarData = await dbService.fetchConversations();
-      setConversations(sidebarData);
-    }
+    const sidebarData = await dbService.fetchConversations();
+    console.log('📋 Sidebar refreshed after hydration');
+    setConversations(sidebarData);
 
     // Title generation (background)
     if (isNewConversation || isBranching) {
@@ -355,6 +388,14 @@ const App: React.FC = () => {
           if (isNewConversation) {
             await dbService.updateConversationState(currentConvId!, { title: llmTitle });
           }
+          
+          // Re-hydrate to show updated title
+          const updatedNodes = await dbService.fetchConversationDetail(currentConvId!);
+          setWorkspace(prev => ({
+            ...prev,
+            nodes: updatedNodes
+          }));
+          
           const updatedSidebar = await dbService.fetchConversations();
           setConversations(updatedSidebar);
         } catch (err) {
@@ -526,8 +567,12 @@ const App: React.FC = () => {
 
   <div className="flex items-center gap-4">
     <button
-      onClick={() => setWorkspace(p => ({ ...p, viewMode: p.viewMode === 'chat' ? 'node' : 'chat' }))}
-      className={`flex items-center gap-3 px-6 py-2.5 rounded-xl transition-all duration-300 border ${
+      onClick={() => {
+            console.log('🔄 [VIEW SWITCH] Switching from', workspace.viewMode, 'to', workspace.viewMode === 'chat' ? 'node' : 'chat');
+
+        setWorkspace(p => ({ ...p, viewMode: p.viewMode === 'chat' ? 'node' : 'chat' }))}
+      }
+        className={`flex items-center gap-3 px-6 py-2.5 rounded-xl transition-all duration-300 border ${
         workspace.viewMode === 'chat' 
           ? 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-white' 
           : 'bg-blue-600 border-blue-500 text-white shadow-[0_0_20px_rgba(37,99,235,0.3)]'
