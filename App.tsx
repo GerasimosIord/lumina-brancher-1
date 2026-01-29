@@ -267,10 +267,14 @@ console.log('🟢 [OPTIMISTIC] Creating new node with temp ID:', tempNodeId);
     // GENERATE AI RESPONSE FIRST (while user message is showing)
     const t6 = performance.now();
     const historyPath = getFullHistoryPath(optimisticNodeId); 
-    const aiContext = historyPath.flatMap(n => n.messages).map(m => ({
+    const aiContext = historyPath.flatMap(n => 
+  n.messages
+    .filter(m => m !== userMsg) // Don't duplicate current message
+    .map(m => ({
       role: m.role,
       parts: [{ text: m.content }]
-    }));
+    }))
+);
 
     console.log(`🤖 [AI] Calling generateResponse`);
     const responseText = await generateResponse(text, aiContext, files);

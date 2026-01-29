@@ -9,15 +9,26 @@ DONE: replies are slow
 DONE: text input must grow vertically
 DONE: new branch doesnt get generated instantly
 DONE: reading/uploading files
+DONE: user messages must not be tall
+DONE: file upload-ui
+DONE: replace typing dots with spinning circle
+
+// For Alpha testing
+name
+BUG: Files don't get uploaded if text is already on the input area.
+remove mock replies/titles
+
 
 store files correctly
 add options for gpt/gemini/claude color themes
 add account vieweing
 replies coming bit by bit for better speed and ux
 all lines must be straight in react flow
-name
+
 temp memory for when refreshing
-user messages must not be tall
 replace typing dots with spinning circle
+
+
+
 
 /// - REMOVE CONSOLE OUTPUTS BEFORE DEPLOYMENT
