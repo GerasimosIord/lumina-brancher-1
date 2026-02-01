@@ -20,9 +20,9 @@ interface ChatViewProps {
 }
 
 const MODELS = [
-  { id: 'gemini-3-pro-preview', name: 'Gemini 3.0 Pro' },
-  { id: 'gemini-3-flash-preview', name: 'Gemini 3.0 Flash' },
-  { id: 'gpt-5', name: 'ChatGPT 5'}
+  { id: 'gemini-3-pro-preview', name: 'Gemini 3.0 Pro', provider: 'gemini' },
+  { id: 'gemini-3-flash-preview', name: 'Gemini 3.0 Flash', provider: 'gemini' },
+  { id: 'gpt-5', name: 'ChatGPT 5', provider: 'openai'}
   //{ id: 'gemini-3-pro', name: 'Gemini 3 Pro' },
 ];
 

@@ -12,6 +12,7 @@
     "@google/genai": "^1.37.0",
     "@supabase/supabase-js": "^2.91.1",
     "@types/react-syntax-highlighter": "^15.5.13",
+    "openai": "^6.17.0",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
     "react-markdown": "^10.1.0",

@@ -44,7 +44,7 @@ export const generateResponse = async (
         const mimeType = getMimeType(file);
         
         userParts.push({
-          inlineData: {
+          inlineData: {x  
             mimeType: mimeType,
             data: base64Data
           }

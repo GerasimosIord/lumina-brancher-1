@@ -29,18 +29,22 @@ DONE: - different models
 DONE: - enable pasting of images/files
 DONE: -code components must be scrollable and have beautiful scroll bar
 DONE:  add copy button to code and stuff
+DONE: - ALPHA: context must be introduced for branching
+
+
+
 
 BACKEND STUFF:
-- include kimi, claude, chatgpt models
-- stop generating button
+- ALPHA: include chatGPT, claude
+- ALPHA: stop generating button
 - temp memory for when refreshing
-- last edited chats must be fetched
-- context must be introduced for branching
-- message disappearing again
+- ALPHA: last edited chats must be fetched
+
+- ALPHA: message disappearing again
 - possibly map view for scroll bar
 - store files correctly
 - usage monitoring
-- bug with new branch
+- ALPHA: bug with new branch
 - thought races for thinking models
 
 UI STUFF:
@@ -50,6 +54,13 @@ UI STUFF:
 - loading animation better
 - go pro button
 - paywall
+
+
+PERIPHERALS:
+- Starting Guide
+
+
+
 
 SECURITY STUFF:
 ---

@@ -6,6 +6,7 @@ import { NodeView } from './components/NodeView';
 import { generateResponse, generateTitle } from './services/geminiService';
 import { dbService } from './services/dbService';
 import { supabase } from './services/supabaseClient';
+import { generateResponseOpenAI } from './services/openaiService';
 
 interface Conversation {
   id: string;
@@ -267,14 +268,14 @@ console.log('🟢 [OPTIMISTIC] Creating new node with temp ID:', tempNodeId);
   try {
     // GENERATE AI RESPONSE FIRST (while user message is showing)
     const t6 = performance.now();
-    const historyPath = getFullHistoryPath(optimisticNodeId); 
-    const aiContext = historyPath.flatMap(n => 
-  n.messages
-    .filter(m => m !== userMsg) // Don't duplicate current message
-    .map(m => ({
-      role: m.role,
-      parts: [{ text: m.content }]
-    }))
+const historyNodeId = isBranching ? workspace.branchingFromId : optimisticNodeId;
+const historyPath = getFullHistoryPath(historyNodeId); 
+
+const aiContext = historyPath.flatMap(n => 
+  n.messages.map(m => ({
+    role: m.role,
+    parts: [{ text: m.content }]
+  }))
 );
 
     //console.log(`🤖 [AI] Calling generateResponse`);
