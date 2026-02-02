@@ -35,7 +35,7 @@ DONE: - ALPHA: context must be introduced for branching
 
 
 BACKEND STUFF:
-- ALPHA: include chatGPT, claude
+- include claude
 - ALPHA: stop generating button
 - temp memory for when refreshing
 - ALPHA: last edited chats must be fetched
@@ -54,7 +54,7 @@ UI STUFF:
 - loading animation better
 - go pro button
 - paywall
-
+-share chat
 
 PERIPHERALS:
 - Starting Guide

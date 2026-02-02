@@ -22,7 +22,11 @@ interface ChatViewProps {
 const MODELS = [
   { id: 'gemini-3-pro-preview', name: 'Gemini 3.0 Pro', provider: 'gemini' },
   { id: 'gemini-3-flash-preview', name: 'Gemini 3.0 Flash', provider: 'gemini' },
-  { id: 'gpt-5', name: 'ChatGPT 5', provider: 'openai'}
+  { id: 'gpt-5', name: 'GPT-5', provider: 'openai'},
+  { id: 'gpt-4o', name: 'GPT-4o', provider: 'openai' },
+  { id: 'gpt-4-turbo', name: 'GPT-4 Turbo', provider: 'openai' },
+  { id: 'gpt-3.5-turbo', name: 'GPT-3.5 Turbo', provider: 'openai' },
+  
   //{ id: 'gemini-3-pro', name: 'Gemini 3 Pro' },
 ];
 
@@ -101,6 +105,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
     }, 1500);
   }
 };
+
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
   console.log('🔍 handleFileSelect called!', e.target.files?.length, 'files');
@@ -430,13 +435,22 @@ export const ChatView: React.FC<ChatViewProps> = ({
                   className={`p-2 rounded-xl transition-all ${(!input.trim() && files.length === 0) || isGenerating ? 'text-zinc-600 cursor-not-allowed' : (isBranching ? 'text-blue-500 hover:text-blue-400' : 'text-zinc-200 hover:text-white')} hover:scale-[1.02] active:scale-[0.98]`}
                 >
                   {isGenerating ? (
-                    <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    /* STOP BUTTON (Square) */
+                    <svg 
+                      className="w-5 h-5" 
+                      viewBox="0 0 24 24" 
+                      fill="currentColor"
+                    >
+                      {/* Rounded Square */}
+                      <rect x="6" y="6" width="12" height="12" rx="2" ry="2" />
                     </svg>
                   ) : (
-                    /* Fatter Icon */
-                    <svg className="w-5 h-5 " viewBox="0 0 24 24" fill="currentColor">
+                    /* SEND BUTTON (Arrow) */
+                    <svg 
+                      className="w-5 h-5" 
+                      viewBox="0 0 24 24" 
+                      fill="currentColor"
+                    >
                       <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
                     </svg>
                   )}

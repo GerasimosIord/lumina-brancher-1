@@ -55,8 +55,21 @@ export const NodeView: React.FC<NodeViewProps> = (props) => {
   const { nodes, rootNodeId, currentNodeId, viewMode, onSelectNode, onBranchNode } = props;
 
   const { flowNodes, flowEdges } = useMemo(() => {
-    if (!rootNodeId) return { flowNodes: [], flowEdges: [] };
-
+    console.log('🔍 NodeView recalculating', { 
+  rootNodeId, 
+  hasRootInNodes: !!nodes[rootNodeId],
+  nodesKeys: Object.keys(nodes),
+  timestamp: Date.now()
+});
+  if (!rootNodeId) {
+    console.warn('NodeView: rootNodeId is null');
+    return { flowNodes: [], flowEdges: [] };
+  }
+  
+  if (!nodes[rootNodeId]) {
+    console.error('NodeView: root node not found in nodes!', rootNodeId, 'Available:', Object.keys(nodes));
+    return { flowNodes: [], flowEdges: [] };
+  }
     const flowNodes: Node[] = [];
     const flowEdges: Edge[] = [];
     

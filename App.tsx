@@ -280,7 +280,22 @@ const aiContext = historyPath.flatMap(n =>
 
     //console.log(`🤖 [AI] Calling generateResponse`);
     console.log(`🤖 [AI] Starting Stream...`);
-    const stream = await generateResponse(text, aiContext, files, selectedModel);
+    
+    // Determine which provider to use based on selected model
+    const isOpenAI = selectedModel.startsWith('gpt-');
+    let stream;
+    if (isOpenAI) {
+      // Convert Gemini format to OpenAI format
+      const openaiContext = aiContext.map((msg: any) => ({
+        role: msg.role === 'model' ? 'assistant' as const : msg.role as 'user',
+        content: msg.parts[0].text
+      }));
+      
+      stream = await generateResponseOpenAI(text, openaiContext, files, selectedModel);
+    } else {
+      stream = await generateResponse(text, aiContext, files, selectedModel);
+    }
+    
     console.log(`🤖 [AI] Response received (${(performance.now() - t6).toFixed(0)}ms)`);
     let fullResponse = "";
 const aiMsgTimestamp = Date.now();
@@ -322,8 +337,11 @@ const streamWordsGradually = async (text: string, baseContent: string) => {
     
     // Update UI with each word
     setWorkspace(prev => {
-      const node = prev.nodes[optimisticNodeId];
-      if (!node) return prev;
+    const node = prev.nodes[optimisticNodeId];
+    if (!node) {
+      console.warn('⚠️ Node not found during stream, preserving state');
+      return prev; // Keep existing state instead of wiping
+    }
 
       const updatedMessages = [...node.messages];
       const lastIndex = updatedMessages.length - 1;
@@ -352,13 +370,20 @@ const streamWordsGradually = async (text: string, baseContent: string) => {
   return displayedContent;
 };
 
-// Loop through the chunks as they arrive
-for await (const chunk of stream) {
-  // Extract text from the chunk
-  const chunkText = typeof chunk.text === 'function' ? chunk.text() : chunk.text || "";
-  
-  // Stream this chunk's words gradually instead of all at once
-  fullResponse = await streamWordsGradually(chunkText, fullResponse);
+// Process stream based on provider
+if (isOpenAI) {
+  for await (const chunk of stream) {
+    const content = chunk.choices[0]?.delta?.content || '';
+    if (content) {
+      fullResponse = await streamWordsGradually(content, fullResponse);
+    }
+  }
+} else {
+  // Existing Gemini streaming logic
+  for await (const chunk of stream) {
+    const chunkText = typeof chunk.text === 'function' ? chunk.text() : chunk.text || "";
+    fullResponse = await streamWordsGradually(chunkText, fullResponse);
+  }
 }
 
 
@@ -423,23 +448,28 @@ console.log('🔄 About to re-hydrate from database. targetNodeId:', targetNodeI
 
     // RE-HYDRATE FROM DATABASE to ensure perfect sync
     const freshNodes = await dbService.fetchConversationDetail(currentConvId!);
+    
+    // Fetch the latest conversation header to get the authoritative root_node_id
+    const sidebarData = await dbService.fetchConversations();
+    const conversationHeader = sidebarData.find(c => c.id === currentConvId);
+    const dbRootNodeId = conversationHeader?.root_node_id;
+    
 console.log('🟢 [DB COMPLETE] Replacing temp node:', tempNodeId, '→', targetNodeId);
+console.log('🔍 Root node from DB:', dbRootNodeId, 'Fresh nodes count:', Object.keys(freshNodes).length);
     
     setWorkspace(prev => {
   return {
     ...prev,
     nodes: freshNodes,
     currentNodeId: targetNodeId,
-    rootNodeId: isNewConversation ? targetNodeId : prev.rootNodeId, // FIX: Always update rootNodeId for new conversations
+    rootNodeId: dbRootNodeId || targetNodeId, // Always use DB's root_node_id as source of truth
     branchingFromId: null
   };
 });
 
-    // Update sidebar
-    const sidebarData = await dbService.fetchConversations();
+    // Update sidebar (we already fetched it above)
     console.log('📋 Sidebar refreshed after hydration');
     setConversations(sidebarData);
-
     // Title generation (background)
     if (isNewConversation || isBranching) {
       generateTitle(text, fullResponse).then(async (llmTitle) => {
