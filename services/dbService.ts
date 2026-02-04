@@ -110,12 +110,13 @@ export const dbService = {
     if (error) throw error;
   },
 
-  async createNode(payload: {  
+  async createNode(payload: { 
+    id?: string, // <--- ADD THIS
     conversations_id: string, 
     parent_id: string | null, 
     hierarchical_id: string, 
-    is_branch: boolean,
-    title?: string 
+    is_branch: boolean, 
+    title?: string,
   }) {
 
     const { data: { user } } = await supabase.auth.getUser();
@@ -124,6 +125,7 @@ export const dbService = {
     const { data, error } = await supabase
       .from('nodes')
       .insert({
+        id: payload.id, // <--- ADD THIS
         conversations_id: payload.conversations_id,
         parent_id: payload.parent_id,
         hierarchical_id: payload.hierarchical_id,

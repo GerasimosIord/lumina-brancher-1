@@ -23,9 +23,7 @@ interface NodeViewProps {
   onBranchNode: (id: string) => void;
 }
 
-const nodeTypes = {
-  chatNode: NodeCard,
-};
+
 
 const CameraController: React.FC<{ currentNodeId: string | null; viewMode: 'chat' | 'node' }> = ({ 
   currentNodeId, 
@@ -52,6 +50,12 @@ const CameraController: React.FC<{ currentNodeId: string | null; viewMode: 'chat
 };
 
 export const NodeView: React.FC<NodeViewProps> = (props) => {
+  // ADD THIS HERE:
+  const nodeTypes = useMemo(() => ({
+    chatNode: NodeCard,
+  }), []); 
+
+
   const { nodes, rootNodeId, currentNodeId, viewMode, onSelectNode, onBranchNode } = props;
 
   const { flowNodes, flowEdges } = useMemo(() => {
