@@ -6,6 +6,7 @@ import { NodeView } from './components/NodeView';
 import { generateResponse, generateTitle } from './services/geminiService';
 import { dbService } from './services/dbService';
 import { supabase } from './services/supabaseClient';
+import { generateResponseOpenAI } from './services/openaiService';
 
 interface Conversation {
   id: string;
@@ -103,6 +104,26 @@ useEffect(() => {
     return endsWithLetter ? `${parentId}.${siblingsCount + 1}` : `${parentId}.${String.fromCharCode(97 + siblingsCount)}`;
   };
 
+  const handleReportBug = async () => {
+    const description = prompt("Describe the bug (what happened?):");
+    if (!description) return;
+
+    try {
+      // Optional: Capture basic browser info
+      const debugInfo = JSON.stringify({
+        userAgent: navigator.userAgent,
+        screen: `${window.innerWidth}x${window.innerHeight}`,
+        url: window.location.href,
+        node: workspace.currentNodeId // helpful to know where they were
+      }, null, 2);
+
+      await dbService.reportBug(description, debugInfo);
+      alert("Bug reported! Thanks for helping.");
+    } catch (err) {
+      alert("Failed to send report. Irony.");
+      console.error(err);
+    }
+  };
   const handleDeleteConversation = async (convId: string, e: React.MouseEvent) => {
     e.stopPropagation(); // Prevent selecting the conversation when clicking delete
     
@@ -174,329 +195,283 @@ useEffect(() => {
   };
 
   const handleSendMessage = async (text: string, files: File[]) => {
-  if (isGenerating || (!text.trim() && files.length === 0)) return;
+    if (isGenerating || (!text.trim() && files.length === 0)) return;
 
-  console.log('🚀 [START] Message send initiated');
-  const perfStart = performance.now();
+    console.log('🚀 [START] Message send initiated');
+    const perfStart = performance.now();
+    setIsGenerating(true);
 
-  console.log("Files to upload:", files);
-  console.log("Text to send:", text);
-  
-  setIsGenerating(true);
-  let currentConvId = activeConvId;
-  
-  const isNewConversation = !currentConvId;
-  const isBranching = !!workspace.branchingFromId;
-  const timestamp = Date.now();
+    let currentConvId = activeConvId;
+    const isNewConversation = !currentConvId;
+    const isBranching = !!workspace.branchingFromId;
+    const timestamp = Date.now();
 
-  const currentMessages = (workspace.currentNodeId && workspace.nodes[workspace.currentNodeId]) 
-    ? workspace.nodes[workspace.currentNodeId].messages 
-    : [];
+    // 1. GENERATE IDS ON CLIENT (The "Forever" IDs)
+    // We use crypto.randomUUID() to generate a real UUID v4 immediately.
+    // If we need a new node, we generate its ID now and keep it forever.
+    const clientGeneratedNodeId = self.crypto.randomUUID();
     
-  const userMsg: Message = { 
-    role: 'user', 
-    content: text, 
-    timestamp: timestamp, 
-    ordinal: isNewConversation || isBranching ? 0 : currentMessages.length 
-  };
+    // Determine the Target Node ID immediately
+    const targetNodeId = (isNewConversation || isBranching) 
+      ? clientGeneratedNodeId 
+      : workspace.currentNodeId!;
 
-  // OPTIMISTIC UPDATE
-  const tempNodeId = `temp_${timestamp}`; 
-  let optimisticNodeId = workspace.currentNodeId;
+    const capturedParentId = isBranching ? workspace.branchingFromId : null;
+    const capturedHLabel = generateHierarchicalLabel(capturedParentId, workspace.nodes);
 
-  if (isNewConversation || isBranching) {
-  const parentId = isBranching ? workspace.branchingFromId : null;
-  const hLabel = generateHierarchicalLabel(parentId, workspace.nodes);
-  
-  optimisticNodeId = tempNodeId;
-console.log('🟢 [OPTIMISTIC] Creating new node with temp ID:', tempNodeId);
+    const currentMessages = (workspace.currentNodeId && workspace.nodes[workspace.currentNodeId])
+      ? workspace.nodes[workspace.currentNodeId].messages
+      : [];
 
-  setWorkspace(prev => {
-    const newNodes = {
-      ...prev.nodes,
-      [tempNodeId]: {
-        id: tempNodeId,
-        hierarchicalID: hLabel,
-        parentId: parentId,
-        messages: [{ ...userMsg }],
-        title: '...',
-        timestamp: timestamp,
-        childrenIds: [],
-        isBranch: isBranching
-      }
+    const userMsg: Message = {
+      role: 'user',
+      content: text,
+      timestamp: timestamp,
+      ordinal: isNewConversation || isBranching ? 0 : currentMessages.length
     };
 
-    // Update parent's childrenIds if branching
-    if (parentId && prev.nodes[parentId]) {
-      newNodes[parentId] = {
-        ...prev.nodes[parentId],
-        childrenIds: [...prev.nodes[parentId].childrenIds, tempNodeId]
-      };
-    }
-
-    return {
-      ...prev,
-      nodes: newNodes,
-      currentNodeId: tempNodeId,
-      rootNodeId: !parentId ? tempNodeId : prev.rootNodeId,
-      branchingFromId: null
-    };
-  });
-  } else {
-    if (workspace.currentNodeId) {
-      console.log('🟢 [OPTIMISTIC] Adding user message to existing node');
+    // 2. OPTIMISTIC UPDATE (Using the REAL ID)
+    if (isNewConversation || isBranching) {
+      console.log('🟢 [OPTIMISTIC] Creating new node with PERMANENT ID:', targetNodeId);
 
       setWorkspace(prev => {
-        const node = prev.nodes[prev.currentNodeId!];
-        if (!node) return prev;
+        const newNodes = {
+          ...prev.nodes,
+          [targetNodeId]: {
+            id: targetNodeId, // <--- We use the final ID right away
+            hierarchicalID: capturedHLabel,
+            parentId: capturedParentId,
+            messages: [{ ...userMsg }],
+            title: '...',
+            timestamp: timestamp,
+            childrenIds: [],
+            isBranch: isBranching
+          }
+        };
+
+        // Update parent's childrenIds if branching
+        if (capturedParentId && prev.nodes[capturedParentId]) {
+          newNodes[capturedParentId] = {
+            ...prev.nodes[capturedParentId],
+            childrenIds: [...prev.nodes[capturedParentId].childrenIds, targetNodeId]
+          };
+        }
 
         return {
           ...prev,
-          nodes: { 
-            ...prev.nodes, 
-            [prev.currentNodeId!]: {
-              ...node,
-              messages: [...node.messages, userMsg]
-            }
-          }
+          nodes: newNodes,
+          currentNodeId: targetNodeId,
+          rootNodeId: !capturedParentId ? targetNodeId : prev.rootNodeId,
+          branchingFromId: null
         };
       });
-    }
-  }
-
-  try {
-    // GENERATE AI RESPONSE FIRST (while user message is showing)
-    const t6 = performance.now();
-    const historyPath = getFullHistoryPath(optimisticNodeId); 
-    const aiContext = historyPath.flatMap(n => 
-  n.messages
-    .filter(m => m !== userMsg) // Don't duplicate current message
-    .map(m => ({
-      role: m.role,
-      parts: [{ text: m.content }]
-    }))
-);
-
-    //console.log(`🤖 [AI] Calling generateResponse`);
-    console.log(`🤖 [AI] Starting Stream...`);
-    const stream = await generateResponse(text, aiContext, files, selectedModel);
-    console.log(`🤖 [AI] Response received (${(performance.now() - t6).toFixed(0)}ms)`);
-    let fullResponse = "";
-const aiMsgTimestamp = Date.now();
-    const aiMsg: Message = { 
-  role: 'model', 
-  content: '', 
-  timestamp: aiMsgTimestamp, 
-  ordinal: userMsg.ordinal + 1 
-};
-
-    // SHOW AI RESPONSE IMMEDIATELY (before DB saves!)
-    console.log('🟢 [AI RESPONSE] Adding AI message to node:', optimisticNodeId);
-
-    setWorkspace(prev => {
-  const node = prev.nodes[optimisticNodeId];
-  if (!node) return prev;
-
-  return {
-    ...prev,
-    nodes: {
-      ...prev.nodes,
-      [optimisticNodeId]: {
-        ...node,
-        messages: [...node.messages, aiMsg]
-      }
-    }
-  };
-});
-
-
-
-// Helper function to stream words gradually (simulates word-by-word effect)
-const streamWordsGradually = async (text: string, baseContent: string) => {
-  const words = text.split(/(\s+)/); // Split by whitespace but keep the spaces
-  let displayedContent = baseContent;
-  
-  for (const word of words) {
-    displayedContent += word;
-    
-    // Update UI with each word
-    setWorkspace(prev => {
-      const node = prev.nodes[optimisticNodeId];
-      if (!node) return prev;
-
-      const updatedMessages = [...node.messages];
-      const lastIndex = updatedMessages.length - 1;
-      
-      updatedMessages[lastIndex] = {
-        ...updatedMessages[lastIndex],
-        content: displayedContent
-      };
-
-      return {
-        ...prev,
-        nodes: {
-          ...prev.nodes,
-          [optimisticNodeId]: {
-            ...node,
-            messages: updatedMessages
-          }
-        }
-      };
-    });
-    
-    // Small delay between words (adjust for speed: lower = faster)
-    await new Promise(resolve => setTimeout(resolve, 0)); // 30ms per word
-  }
-  
-  return displayedContent;
-};
-
-// Loop through the chunks as they arrive
-for await (const chunk of stream) {
-  // Extract text from the chunk
-  const chunkText = typeof chunk.text === 'function' ? chunk.text() : chunk.text || "";
-  
-  // Stream this chunk's words gradually instead of all at once
-  fullResponse = await streamWordsGradually(chunkText, fullResponse);
-}
-
-
-
-    setIsGenerating(false); // User can see response now!
-    console.log(`✅ [USER SEES RESPONSE] Time: ${(performance.now() - perfStart).toFixed(0)}ms`);
-
-    // NOW do database operations in background (user already sees the response!)
-    const tDB = performance.now();
-    
-    if (isNewConversation) {
-      const newConv = await dbService.createConversation("New Discussion");
-      currentConvId = newConv.id;
-      setActiveConvId(currentConvId);
-    }
-
-    let targetNodeId: string;
-
-    if (isNewConversation || isBranching) {
-      const parentId = isBranching ? workspace.branchingFromId : null;
-      const hLabel = generateHierarchicalLabel(parentId, workspace.nodes);
-
-      const newNode = await dbService.createNode({
-        conversations_id: currentConvId!,
-        parent_id: parentId,
-        hierarchical_id: hLabel,
-        is_branch: isBranching,
-        title: '...'
-      });
-      targetNodeId = newNode.id;
     } else {
-      targetNodeId = workspace.currentNodeId!;
-    }
-
-    await dbService.createMessage({
-      nodes_id: targetNodeId,
-      role: 'user',
-      content: text,
-      ordinal: userMsg.ordinal
-    });
-
-    await dbService.createMessage({
-      nodes_id: targetNodeId,
-      role: 'model',
-      content: fullResponse,
-      ordinal: aiMsg.ordinal
-    });
-
-    if (isNewConversation) {
-      await dbService.updateConversationState(currentConvId!, {
-        root_node_id: targetNodeId,
-        current_node_id: targetNodeId
-      });
-    } else if (isBranching) {
-      await dbService.updateConversationState(currentConvId!, {
-        current_node_id: targetNodeId
-      });
-    }
-
-    console.log(`📦 [DB] All operations complete (${(performance.now() - tDB).toFixed(0)}ms)`);
-console.log('🔄 About to re-hydrate from database. targetNodeId:', targetNodeId);
-
-    // RE-HYDRATE FROM DATABASE to ensure perfect sync
-    const freshNodes = await dbService.fetchConversationDetail(currentConvId!);
-console.log('🟢 [DB COMPLETE] Replacing temp node:', tempNodeId, '→', targetNodeId);
-    
-    setWorkspace(prev => {
-  return {
-    ...prev,
-    nodes: freshNodes,
-    currentNodeId: targetNodeId,
-    rootNodeId: isNewConversation ? targetNodeId : prev.rootNodeId, // FIX: Always update rootNodeId for new conversations
-    branchingFromId: null
-  };
-});
-
-    // Update sidebar
-    const sidebarData = await dbService.fetchConversations();
-    console.log('📋 Sidebar refreshed after hydration');
-    setConversations(sidebarData);
-
-    // Title generation (background)
-    if (isNewConversation || isBranching) {
-      generateTitle(text, fullResponse).then(async (llmTitle) => {
-        try {
-          await dbService.updateNodeTitle(targetNodeId, llmTitle);
-          if (isNewConversation) {
-            await dbService.updateConversationState(currentConvId!, { title: llmTitle });
-          }
-          
-          // Re-hydrate to show updated title
-          const updatedNodes = await dbService.fetchConversationDetail(currentConvId!);
-          setWorkspace(prev => ({
-            ...prev,
-            nodes: updatedNodes
-          }));
-          
-          const updatedSidebar = await dbService.fetchConversations();
-          setConversations(updatedSidebar);
-        } catch (err) {
-          console.error("Title update failed:", err);
-        }
-      });
-    }
-
-    console.log(`✅ [COMPLETE] Total time: ${(performance.now() - perfStart).toFixed(0)}ms`);
-
-  } catch (err) {
-    console.error("Critical Message Failure:", err);
-    setIsGenerating(false);
-    alert("Something went wrong");
-    
-    // Rollback
-    setWorkspace(prev => {
-      if (!isNewConversation && !isBranching && prev.currentNodeId) {
-        const node = prev.nodes[prev.currentNodeId];
-        if(!node) return prev;
-        const rolledBackMessages = node.messages.filter(m => m.timestamp !== timestamp);
+      // Normal message appending
+      setWorkspace(prev => {
+        const node = prev.nodes[targetNodeId];
+        if (!node) return prev;
         return {
           ...prev,
           nodes: {
             ...prev.nodes,
-            [prev.currentNodeId]: { ...node, messages: rolledBackMessages }
+            [targetNodeId]: { ...node, messages: [...node.messages, userMsg] }
           }
         };
-      }
-      
+      });
+    }
+
+    try {
+      // 3. GENERATE AI RESPONSE (Stream into the view)
+      // Manually build context because state might not have updated in this closure yet
+      let aiContext;
       if (isNewConversation || isBranching) {
-        const { [tempNodeId]: removed, ...remainingNodes } = prev.nodes;
+          const parentHistory = getFullHistoryPath(capturedParentId);
+          aiContext = parentHistory.flatMap(n => 
+            n.messages.map(m => ({ role: m.role, parts: [{ text: m.content }] }))
+          );
+      } else {
+          const historyPath = getFullHistoryPath(targetNodeId);
+          aiContext = historyPath.flatMap(n => 
+            n.messages.map(m => ({ role: m.role, parts: [{ text: m.content }] }))
+          );
+      }
+
+      const isOpenAI = selectedModel.startsWith('gpt-');
+      let stream;
+      
+      // Call API
+      if (isOpenAI) {
+        const openaiContext = aiContext.map((msg: any) => ({
+          role: msg.role === 'model' ? 'assistant' as const : msg.role as 'user',
+          content: msg.parts[0].text
+        }));
+        stream = await generateResponseOpenAI(text, openaiContext, files, selectedModel);
+      } else {
+        stream = await generateResponse(text, aiContext, files, selectedModel);
+      }
+
+      // 4. STREAM HANDLING
+      let fullResponse = "";
+      const aiMsgTimestamp = Date.now();
+      const aiMsg: Message = {
+        role: 'model',
+        content: '',
+        timestamp: aiMsgTimestamp,
+        ordinal: userMsg.ordinal + 1
+      };
+
+      // Add empty AI message to UI
+      setWorkspace(prev => {
+        const node = prev.nodes[targetNodeId];
+        if (!node) return prev;
         return {
           ...prev,
-          nodes: remainingNodes,
-          currentNodeId: prev.currentNodeId === tempNodeId ? null : prev.currentNodeId
+          nodes: {
+            ...prev.nodes,
+            [targetNodeId]: { ...node, messages: [...node.messages, aiMsg] }
+          }
         };
+      });
+
+      // Stream Helper
+      const streamWordsGradually = async (textChunk: string) => {
+        fullResponse += textChunk;
+        setWorkspace(prev => {
+          const node = prev.nodes[targetNodeId];
+          if (!node) return prev;
+          const updatedMessages = [...node.messages];
+          const lastMsg = updatedMessages[updatedMessages.length - 1];
+          if (lastMsg.role === 'model') {
+             lastMsg.content = fullResponse;
+          }
+          return {
+            ...prev,
+            nodes: { ...prev.nodes, [targetNodeId]: { ...node, messages: updatedMessages } }
+          };
+        });
+        await new Promise(r => setTimeout(r, 0));
+      };
+
+      // Process Stream
+      if (isOpenAI) {
+        for await (const chunk of stream) {
+          const content = chunk.choices[0]?.delta?.content || '';
+          if (content) await streamWordsGradually(content);
+        }
+      } else {
+        for await (const chunk of stream) {
+          const chunkText = typeof chunk.text === 'function' ? chunk.text() : chunk.text || "";
+          await streamWordsGradually(chunkText);
+        }
       }
-      return prev;
-    });
-  }
-};
+
+      setIsGenerating(false);
+
+      // 5. DATABASE SYNC (Background)
+      // We already have the IDs, we just need to save them.
+      
+      if (isNewConversation) {
+        // Create conversation wrapper first
+        const newConv = await dbService.createConversation("New Discussion");
+        currentConvId = newConv.id;
+        setActiveConvId(currentConvId);
+      }
+
+      if (isNewConversation || isBranching) {
+        // SAVE NODE WITH OUR PRE-GENERATED ID
+        await dbService.createNode({
+          id: targetNodeId, // <--- PASSING THE ID WE GENERATED
+          conversations_id: currentConvId!,
+          parent_id: capturedParentId,
+          hierarchical_id: capturedHLabel,
+          is_branch: isBranching,
+          title: '...'
+        });
+      }
+
+      // Save Messages
+      await dbService.createMessage({
+        nodes_id: targetNodeId,
+        role: 'user',
+        content: text,
+        ordinal: userMsg.ordinal
+      });
+
+      await dbService.createMessage({
+        nodes_id: targetNodeId,
+        role: 'model',
+        content: fullResponse,
+        ordinal: aiMsg.ordinal
+      });
+
+      // Update Pointers
+      if (isNewConversation) {
+        await dbService.updateConversationState(currentConvId!, {
+          root_node_id: targetNodeId,
+          current_node_id: targetNodeId
+        });
+      } else if (isBranching) {
+        await dbService.updateConversationState(currentConvId!, {
+          current_node_id: targetNodeId
+        });
+      }
+
+      // 6. FINAL SYNC (Just to update sidebar/titles, NO NODE SWAPPING)
+      const sidebarData = await dbService.fetchConversations();
+      setConversations(sidebarData);
+      
+      console.log(`✅ [COMPLETE] Total time: ${(performance.now() - perfStart).toFixed(0)}ms`);
+      
+      if (isNewConversation || isBranching) {
+        generateTitle(text, fullResponse).then(async (llmTitle) => {
+          try {
+            console.log("🏷️ Generated Title:", llmTitle);
+
+            // A. Update Database
+            await dbService.updateNodeTitle(targetNodeId, llmTitle);
+            
+            if (isNewConversation) {
+               // Update conversation title in DB
+               await dbService.updateConversationState(currentConvId!, { title: llmTitle });
+            }
+
+            // B. UPDATE LOCAL WORKSPACE (The Safe Way)
+            // We update ONLY the title field of the specific node.
+            // We do NOT re-fetch the whole node list, preventing the "stale data" wipeout.
+            setWorkspace(prev => {
+              const node = prev.nodes[targetNodeId];
+              if (!node) return prev; // Safety check
+              return {
+                ...prev,
+                nodes: {
+                  ...prev.nodes,
+                  [targetNodeId]: {
+                    ...node,
+                    title: llmTitle
+                  }
+                }
+              };
+            });
+
+            // C. Update Sidebar (Background Sync)
+            // This is safe to re-fetch because it doesn't affect the active view
+            const updatedSidebar = await dbService.fetchConversations();
+            setConversations(updatedSidebar);
+
+          } catch (titleErr) {
+            console.warn("Title generation failed silently:", titleErr);
+            // We don't alert here because the message was sent successfully
+          }
+        });
+      }
+
+    } catch (err) {
+      console.error("Message Failure:", err);
+      setIsGenerating(false);
+      alert("Something went wrong: " + (err as Error).message);
+      // No rollback needed usually, but you can add it if you want to be strict
+    }
+  };
 
 
   const handleClearAll = () => {
@@ -509,7 +484,7 @@ console.log('🟢 [DB COMPLETE] Replacing temp node:', tempNodeId, '→', target
 
   const currentTitle = useMemo(() => {
     const node = workspace.currentNodeId ? workspace.nodes[workspace.currentNodeId] : null;
-    return node?.title && node.title !== '...' ? node.title : "Lumina Session";
+    return node?.title && node.title !== '...' ? node.title : "LLM-Brancher Session";
   }, [workspace.nodes, workspace.currentNodeId]);
 
   return (
@@ -524,8 +499,8 @@ console.log('🟢 [DB COMPLETE] Replacing temp node:', tempNodeId, '→', target
         </svg>
     </div>
     <div>
-        <h1 className="text-[13px] font-black tracking-[0.4em] uppercase text-white">LUMINA</h1>
-        <p className="text-[8px] font-bold tracking-[0.2em] uppercase text-zinc-600">Topological Brancher v2.0</p>
+        <h1 className="text-[13px] font-black tracking-[0.4em] uppercase text-white">LLM-Brancher</h1>
+        <p className="text-[8px] font-bold tracking-[0.2em] uppercase text-zinc-600">Alpha Version</p>
     </div>
 </div>
 
@@ -547,9 +522,7 @@ console.log('🟢 [DB COMPLETE] Replacing temp node:', tempNodeId, '→', target
 
         <div className="px-6 mb-4 flex items-center justify-between">
           <p className="text-[10px] font-black uppercase tracking-[0.3em] text-zinc-600">Chats</p>
-          {conversations.length > 0 && (
-            <button onClick={handleClearAll} className="text-[9px] font-bold text-zinc-700 hover:text-red-500 transition-colors uppercase tracking-widest">Wipe Memory</button>
-          )}
+          
         </div>
 
         <div className="flex-1 overflow-y-auto custom-scrollbar px-3 space-y-2">
@@ -625,6 +598,13 @@ console.log('🟢 [DB COMPLETE] Replacing temp node:', tempNodeId, '→', target
   </div>
 
   <div className="flex items-center gap-4">
+    <button 
+  onClick={handleReportBug}
+  className="text-[10px] opacity-60 text-red-500 hover:text-red-400 font-bold uppercase tracking-widest flex items-center gap-2"
+>
+  
+  Report Bug/Feedback
+</button>
     <button
       onClick={() => {
             console.log('🔄 [VIEW SWITCH] Switching from', workspace.viewMode, 'to', workspace.viewMode === 'chat' ? 'node' : 'chat');

@@ -29,18 +29,22 @@ DONE: - different models
 DONE: - enable pasting of images/files
 DONE: -code components must be scrollable and have beautiful scroll bar
 DONE:  add copy button to code and stuff
+DONE: - ALPHA: context must be introduced for branching
+DONE: - ALPHA: bug with new branch
+
+
+FOR BETA VERSION:
 
 BACKEND STUFF:
-- include kimi, claude, chatgpt models
-- stop generating button
+- include claude
+- ALPHA: stop generating button
 - temp memory for when refreshing
-- last edited chats must be fetched
-- context must be introduced for branching
-- message disappearing again
+- ALPHA: last edited chats must be fetched
+- correct context management for efficient usage
+- ALPHA: message disappearing again
 - possibly map view for scroll bar
 - store files correctly
 - usage monitoring
-- bug with new branch
 - thought races for thinking models
 
 UI STUFF:
@@ -50,6 +54,24 @@ UI STUFF:
 - loading animation better
 - go pro button
 - paywall
+- share chat
+- SIGNUP must be first not signin
+- name signup field
+- signup with google
+- signup with github
+- branch out button must be wherever you want to branch from
+- dots in bg
+- copy button
+- regenerate button
+- projects (chat grouping)
+- διαφορετικο presentation sta montela
+
+
+PERIPHERALS:
+- Starting Guide
+- ισως να σου οργανωνει ολα τα τσατ σε θεματα σε φουσκες και σε καθε φουσκα μεσα να εχει τα τσατ που ειναι του θεματος
+
+
 
 SECURITY STUFF:
 ---

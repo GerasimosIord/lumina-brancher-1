@@ -84,9 +84,9 @@ const Auth: React.FC = () => {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M13 10V3L4 14h7v7l9-11h-7z" />
             </svg>
           </div>
-          <h1 className="text-2xl font-black tracking-[0.4em] uppercase text-white">LUMINA</h1>
+          <h1 className="text-2xl font-black tracking-[0.4em] uppercase text-white">LLM-Brancher</h1>
           <p className="text-xs font-bold tracking-[0.2em] uppercase text-zinc-600 mt-2">
-            Topological Brancher v2.0
+            Alpha Version
           </p>
         </div>
 

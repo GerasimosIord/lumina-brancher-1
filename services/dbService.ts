@@ -110,12 +110,28 @@ export const dbService = {
     if (error) throw error;
   },
 
-  async createNode(payload: {  
+  async reportBug(description: string, logs: string = "") {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const { error } = await supabase
+      .from('bug_reports')
+      .insert({
+        user_id: user.id,
+        description: description,
+        logs: logs
+      });
+
+    if (error) throw error;
+  },
+
+  async createNode(payload: { 
+    id?: string, // <--- ADD THIS
     conversations_id: string, 
     parent_id: string | null, 
     hierarchical_id: string, 
-    is_branch: boolean,
-    title?: string 
+    is_branch: boolean, 
+    title?: string,
   }) {
 
     const { data: { user } } = await supabase.auth.getUser();
@@ -124,6 +140,7 @@ export const dbService = {
     const { data, error } = await supabase
       .from('nodes')
       .insert({
+        id: payload.id, // <--- ADD THIS
         conversations_id: payload.conversations_id,
         parent_id: payload.parent_id,
         hierarchical_id: payload.hierarchical_id,
